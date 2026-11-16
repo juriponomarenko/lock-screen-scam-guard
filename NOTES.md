@@ -43,7 +43,7 @@ Trap evidence is gathered in three layers, least intrusive first:
 
 | Verdict | Rule | Action |
 |---|---|---|
-| Block | score ≥ 6 **and** two kinds agree **and** (it traps the user, or it looks like a lock screen: terse and non-scrolling) | navigate the tab to the extension's warning page |
+| Block | score ≥ 6 **and** two kinds agree **and** trap score ≥ 3 | navigate the tab to the extension's warning page |
 | Warn | score ≥ 5 with two kinds, or heavy trapping alone (trap score ≥ 6) | dismissible banner with a "Leave this page" button |
 | Allow | anything else | nothing at all |
 
@@ -54,7 +54,7 @@ The detector first neutralises the page's key and right-click handlers, then the
 
 ## Why this approach
 
-- **One kind of evidence is ordinary; two together are not.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. A security article quotes "your computer has been locked". None of those may be touched, and each is a test case. Requiring two kinds to agree is what separates them from the scam.
+- **Content and trapping must agree before a block.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. A security article quotes "your computer has been locked". Each is a test case. Suspicious text alone earns a warning; automatic navigation also needs trapping evidence.
 - **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs content and behaviour to agree. Anything weaker gets a banner the user can dismiss.
 - **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: 18 ms on a 20,000-row generated report, with a cap for larger documents.
 - **Layers instead of one clever trick.** Each trap-detection layer covers the previous one's blind spot: obfuscated scripts defeat the static read but not the probe; a page that ignores synthetic events defeats the probe but not the user's own key press.
@@ -64,12 +64,14 @@ The detector first neutralises the page's key and right-click handlers, then the
 **False positives**
 - A blob document that *both* talks like a scam *and* traps the user, such as a phishing-awareness simulator, is blocked.
 - A long security article in a blob that quotes scare wording and prints a helpline gets the banner (not a redirect). `samples/extra/edge-security-article.html` shows this.
+- A short scam-awareness leaflet gets the same banner: text and layout alone never trigger automatic navigation (`samples/extra/edge-security-leaflet.html`).
 - A blob-hosted game or kiosk using fullscreen + keyboard lock + an exit prompt gets the banner.
 
 **False negatives**
 - Wording outside the English patterns, or wording I did not anticipate. Traps still earn the banner.
 - A lock screen drawn entirely as an image or canvas gets the banner rather than a block, because behaviour alone is not proof (`malicious-image-only.html`).
 - A scam with no phone number and no trapping, for example "download this cleaner", is outside what this detects.
+- A text-only scam with a phone number gets a warning rather than automatic navigation. This preserves legitimate documents that quote scam wording, even when they are short and non-scrolling.
 - Scripts loaded from an external URL are not read; the probe and passive layers still apply.
 - A page that spams `alert()` in a tight loop keeps the renderer busy, so the detector cannot run. Chrome's own dialog throttling is the only mitigation there.
 - A blob created by a `file://` page can only be inspected if "Allow access to file URLs" is on. When it is off the toolbar icon shows a `!` on that tab instead of failing silently.
@@ -83,7 +85,7 @@ The detector first neutralises the page's key and right-click handlers, then the
 - the escape is driven from the service worker, which the page cannot reach, and uses tab discard when a prompt is possible;
 - the banner is shown in the browser's top layer and re-raised on fullscreen changes, so it stays visible.
 
-Late-painted content (`malicious-delayed.html`) is covered by a 15-second mutation watch, and a script tag that deletes itself after running is covered by remembering what was seen.
+Late-painted content (`malicious-delayed.html`) is covered by a 15-second mutation watch, including existing content revealed by changing `hidden`, `class` or `style` (`malicious-attribute-reveal.html`). A script tag that deletes itself after running is covered by remembering what was seen.
 
 ## Bonus: related techniques (not implemented)
 

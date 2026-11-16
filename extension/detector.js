@@ -102,7 +102,6 @@
       if (found) seenCode[name] = true;
     }
     const code = seenCode;
-    const scroller = document.scrollingElement || document.documentElement;
     const nav = globalThis.__lsgNav || {};
     return {
       impersonation: text.impersonation,
@@ -116,9 +115,6 @@
       inputLock: code.inputLock || Boolean(document.pointerLockElement),
       historyTrap: code.historyTrap,
       scriptedRedirect: Boolean(nav.scriptedRedirect),
-      // Terse and not scrollable: looks like a lock screen, not a document.
-      lockLayout:
-        text.textLength <= H.LOCK_SCREEN_MAX_TEXT && scroller.scrollHeight <= window.innerHeight * 1.25,
     };
   }
 
@@ -354,9 +350,16 @@
     evaluate();
     if (blocked) return;
 
-    // Content injected after load (a common way to dodge a one-shot scan).
+    // Content injected or revealed after load. Restrict attribute observation
+    // to visibility changes so unrelated attributes do not trigger rescans.
     observer = new MutationObserver(scheduleEvaluation);
-    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['hidden', 'class', 'style'],
+    });
     setTimeout(stopObserving, OBSERVE_MS);
 
     // Handlers registered late: look again once the page has settled.

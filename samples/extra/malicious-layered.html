@@ -40,10 +40,23 @@
         for (let i = 0; i < 30; i++) history.pushState({ i }, '', location.href);
         window.addEventListener('popstate', () => history.pushState({}, '', location.href));
 
-        const takeOver = () => {
-          document.documentElement.requestFullscreen().then(() => {
-            if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock();
-          }).catch(() => {});
+        // Tests inspect actual promise resolution, rather than inferring a lock
+        // from the presence of the API names in this script.
+        const trapState = window.__lsgTrapState = { status: 'idle', keyboardLocked: false, error: null };
+        const takeOver = async () => {
+          if (trapState.status === 'pending' || trapState.status === 'locked') return;
+          trapState.status = 'pending';
+          trapState.error = null;
+          try {
+            await document.documentElement.requestFullscreen();
+            if (!navigator.keyboard || !navigator.keyboard.lock) throw new Error('Keyboard Lock API unavailable');
+            await navigator.keyboard.lock();
+            trapState.keyboardLocked = true;
+            trapState.status = 'locked';
+          } catch (error) {
+            trapState.error = error.message;
+            trapState.status = 'error';
+          }
         };
         document.addEventListener('click', takeOver);
         document.addEventListener('keydown', takeOver);

@@ -52,8 +52,6 @@
 
   const MAX_TEXT = 20000;
   const MAX_SCRIPT = 200000;
-  /** A lock screen is terse; a document about scams is not. */
-  const LOCK_SCREEN_MAX_TEXT = 1500;
 
   // ---------------------------------------------------------------- content
 
@@ -159,7 +157,7 @@
   }
 
   /**
-   * @param {object} signals booleans named after WEIGHTS, plus `lockLayout`
+   * @param {object} signals booleans named after WEIGHTS
    * @returns {{verdict: 'allow'|'warn'|'block', total: number, content: number,
    *            trap: number, kinds: number, reasons: string[]}}
    */
@@ -179,9 +177,9 @@
     const kinds = Number(deceptive) + Number(hooked) + Number(trapped);
 
     let verdict = 'allow';
-    if (total >= THRESHOLDS.block && kinds >= 2 && (trapped || s.lockLayout)) {
-      // Without trap evidence, only block something that looks like a lock
-      // screen (terse, fills the viewport) rather than a document.
+    if (total >= THRESHOLDS.block && kinds >= 2 && trapped) {
+      // Quoted scam wording can appear in legitimate previews of any length.
+      // Require trapping evidence before automatically navigating away.
       verdict = 'block';
     } else if ((total >= THRESHOLDS.warn && kinds >= 2) || trap >= THRESHOLDS.heavyTrap) {
       verdict = 'warn';
@@ -192,7 +190,6 @@
   const api = Object.freeze({
     WEIGHTS,
     THRESHOLDS,
-    LOCK_SCREEN_MAX_TEXT,
     normalizeText,
     analyzeText,
     analyzeScripts,

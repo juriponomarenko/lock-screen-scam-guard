@@ -109,7 +109,7 @@ test('scripts: legacy keyCode checks and inline handlers are recognised', () => 
 });
 
 test('verdict: provided scam page is blocked with the full score', () => {
-  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { scriptedRedirect: true, lockLayout: true }));
+  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { scriptedRedirect: true }));
   assert.equal(r.verdict, 'block');
   assert.equal(r.total, 15);
   assert.equal(r.kinds, 3);
@@ -117,30 +117,47 @@ test('verdict: provided scam page is blocked with the full score', () => {
 
 test('verdict: provided scam page is still blocked when found already open', () => {
   // No navigation data on the install-time sweep.
-  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { lockLayout: true }));
+  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT));
   assert.equal(r.verdict, 'block');
 });
 
 test('verdict: provided benign report is allowed with a score of zero', () => {
-  const r = H.score(signals(REPORT_TEXT, '', { lockLayout: true }));
+  const r = H.score(signals(REPORT_TEXT, ''));
   assert.equal(r.verdict, 'allow');
   assert.equal(r.total, 0);
 });
 
 test('verdict: one kind of evidence is never enough', () => {
   const allow = (s, why) => assert.equal(H.score(s).verdict, 'allow', why);
-  allow({ phoneCta: true, impersonation: true, lockLayout: true }, 'invoice naming a vendor with a support line');
-  allow({ phoneCta: true, impersonation: true, errorCode: true, lockLayout: true }, 'vendor error page with a helpline');
+  allow({ phoneCta: true, impersonation: true }, 'invoice naming a vendor with a support line');
+  allow({ phoneCta: true, impersonation: true, errorCode: true }, 'vendor error page with a helpline');
   allow({ beforeunload: true, contextMenuBlocked: true }, 'editor with unsaved-changes prompt and custom menu');
   allow({ fullscreen: true, beforeunload: true }, 'presentation viewer');
-  allow({ scare: true, impersonation: true, lockLayout: true }, 'antivirus scan report');
+  allow({ scare: true, impersonation: true }, 'antivirus scan report');
   allow({ keysBlocked: true, scriptedRedirect: true }, 'page that only disables F12');
 });
 
-test('verdict: text-only evidence blocks a lock screen but only warns on a document', () => {
-  const text = { scare: true, phoneCta: true, impersonation: true };
-  assert.equal(H.score({ ...text, lockLayout: true }).verdict, 'block');
-  assert.equal(H.score({ ...text, lockLayout: false }).verdict, 'warn');
+test('verdict: text-only scam evidence warns even with every content signal', () => {
+  const r = H.score(signals(SCAM_TEXT, ''));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.trap, 0);
+  assert.equal(r.content, 8);
+});
+
+test('verdict: a short awareness leaflet quoting the scam is only warned', () => {
+  const leaflet = 'Recognize a tech-support scam. A fake warning may say: "Windows Security Alert. ' +
+    'Your computer has been locked. Call Microsoft Support at 1-800-555-0199." ' +
+    'This is a scam. Never call the number. Close the tab.';
+  const r = H.score(signals(leaflet, ''));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.total, 7);
+  assert.equal(r.trap, 0);
+});
+
+test('verdict: weak trapping plus quoted scam text does not trigger automatic navigation', () => {
+  const r = H.score(signals(SCAM_TEXT, "window.addEventListener('beforeunload', () => {});"));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.trap, 2);
 });
 
 test('verdict: trapping alone warns, and only when it is heavy', () => {

@@ -372,6 +372,19 @@ test('scam-awareness article is never navigated away; its banner can be dismisse
   assert.ok(page.url().startsWith('blob:'));
 });
 
+test('short scam-awareness leaflet is warned about without navigating away', async () => {
+  const { page } = await openSampleViaClick('extra/edge-security-leaflet.html', '#open');
+  await waitFor(() => hasBanner(page), 'the warning banner');
+  await sleep(2000); // include the detector's settled-page checkpoint
+  assert.ok(page.url().startsWith('blob:'));
+  assert.equal(await blockedPage(), undefined);
+  assert.equal(await page.$eval('h1', (h) => h.textContent), 'How to spot a tech-support scam');
+  assert.equal(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight * 1.25), true);
+  const state = await detectorState(page);
+  assert.equal(state.verdict, 'warn');
+  assert.deepEqual(state.reasons.sort(), ['impersonation', 'phoneCta', 'scare']);
+});
+
 // ------------------------------------------------------------ harder scam pages
 
 test('obfuscated scam with the number in an image is caught by the active probe', async () => {
@@ -393,7 +406,22 @@ test('scam that paints its lock screen late is caught when the content appears',
   await expectBlocked(['scare', 'phoneCta', 'keysBlocked']);
 });
 
-test('layered scam (blob-to-blob hop, history flood, fullscreen, keyboard lock) is caught', async () => {
+for (const attribute of ['hidden', 'class', 'style']) {
+  test(`scam revealed only by changing ${attribute} is initially allowed, then blocked`, async () => {
+    const page = await openSample(`extra/malicious-attribute-reveal.html?attribute=${attribute}`);
+    await waitFor(() => page.url().startsWith('blob:'), 'the initially hidden lock screen');
+    await sleep(1800); // beyond the settled scan, before the 2.5-second attribute reveal
+    assert.equal(await page.title(), 'Loading...');
+    assert.equal(await page.$eval('#lock', (element) => getComputedStyle(element).display), 'none');
+    const state = await detectorState(page);
+    assert.equal(state.verdict, 'allow');
+    assert.deepEqual(state.reasons.sort(), ['beforeunload', 'contextMenuBlocked', 'scriptedRedirect']);
+    assert.equal(await hasBanner(page), false);
+    await expectBlocked(['scare', 'phoneCta', 'beforeunload', 'contextMenuBlocked']);
+  });
+}
+
+test('layered scam is caught from its content and static trap signals before interaction', async () => {
   await openSample('extra/malicious-layered.html');
   await expectBlocked(['scare', 'phoneCta', 'keysBlocked', 'fullscreen', 'inputLock', 'historyTrap']);
 });
@@ -439,18 +467,35 @@ test('scam already open, and already clicked on, when the extension is installed
 });
 
 test('layered scam already open in fullscreen with the keyboard locked', async () => {
-  await browser.uninstallExtension(extensionId);
-  const page = await openSample('extra/malicious-layered.html');
-  await waitFor(
-    async () => page.url().startsWith('blob:') && (await page.title().catch(() => '')).includes('Defender'),
-    'the lock screen'
-  );
-  await page.mouse.click(200, 200); // goes fullscreen + locks keyboard + arms beforeunload
-  await sleep(500);
+  // Grant the permission a user would accept; assert that the lock really succeeds.
+  await browser.defaultBrowserContext().overridePermissions(server.origin, ['keyboard-lock']);
+  try {
+    await browser.uninstallExtension(extensionId);
+    const page = await openSample('extra/malicious-layered.html');
+    await waitFor(
+      async () => page.url().startsWith('blob:') && (await page.title().catch(() => '')).includes('Defender'),
+      'the lock screen'
+    );
+    await page.mouse.click(200, 200); // goes fullscreen + locks keyboard + arms beforeunload
+    const trap = await waitFor(
+      () => page.evaluate(() => {
+        const state = window.__lsgTrapState;
+        return state && ['locked', 'error'].includes(state.status)
+          ? { ...state, fullscreen: Boolean(document.fullscreenElement) }
+          : null;
+      }),
+      'fullscreen and keyboard.lock() to finish'
+    );
+    assert.equal(trap.error, null, `takeover failed: ${trap.error}`);
+    assert.equal(trap.fullscreen, true, 'the page must actually be fullscreen before installation');
+    assert.equal(trap.keyboardLocked, true, 'keyboard.lock() must resolve before installation');
 
-  await installExtension();
-  await expectBlocked(['scare', 'phoneCta', 'inputLock']);
-  assert.deepEqual(page.prompts, [], 'the page never got to show "Leave site?"');
+    await installExtension();
+    await expectBlocked(['scare', 'phoneCta', 'inputLock']);
+    assert.deepEqual(page.prompts, [], 'the page never got to show "Leave site?"');
+  } finally {
+    await browser.defaultBrowserContext().clearPermissionOverrides();
+  }
 });
 
 test('benign report already open when the extension is installed is left alone', async () => {
