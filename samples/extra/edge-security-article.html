@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!--
+  Borderline on purpose: a scam-awareness article rendered from a blob: URL.
+  It quotes the scare wording and gives a phone number to call, so its text
+  looks like a scam, but it is a long scrolling document that traps nobody.
+  Expected: never navigated away. The worst outcome is the dismissible banner.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Security centre</title>
+<style>body { font-family: Arial, sans-serif; margin: 40px; } button { padding: 8px 16px; }</style>
+</head>
+<body>
+  <h1>Security centre</h1>
+  <button id="open">Read: how to spot a tech-support scam</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const paragraph = `
+      <p>Tech-support scams are web pages built to frighten you. A typical one fills the screen with a
+      message such as "Your computer has been locked" and claims that unusual activity was detected.
+      It will tell you not to restart or shut down, and it will urge you to call Microsoft Support on a
+      number it provides. None of this is true. A web page cannot lock your computer, and genuine
+      vendors do not publish urgent phone numbers inside browser pop-ups.</p>
+      <p>The people who answer that number will ask to connect to your machine remotely, will show you
+      harmless system logs as "proof" of an infection, and will then charge you for a repair that was
+      never needed. Some go further and ask for online banking access or gift cards.</p>
+    `;
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8" /><title>How to spot a tech-support scam</title></head>
+      <body style="font-family: Georgia, serif; margin: 40px auto; max-width: 680px; line-height: 1.6;">
+        <h1>How to spot a tech-support scam</h1>
+        ${paragraph.repeat(4)}
+        <h2>What to do</h2>
+        <p>Close the tab. If it will not close, end the browser from the task manager. If you think you
+        have already been targeted, call our fraud team on 1-800-555-0177 and we will help you secure
+        your accounts.</p>
+      </body>
+      </html>
+    `;
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  });
+</script>
+</body>
+</html>

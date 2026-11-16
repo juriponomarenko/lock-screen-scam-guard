@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scam page blocked</title>
+<link rel="stylesheet" href="blocked.css" />
+</head>
+<body>
+  <main>
+    <div class="badge" aria-hidden="true">&#10003;</div>
+    <h1 id="headline">Scam page blocked</h1>
+    <p class="lead">
+      The page you were on was pretending that your computer is locked.
+      <strong>It is not.</strong> Nothing was wrong with your device, and nothing has been changed.
+    </p>
+    <ul class="advice">
+      <li>Do not call any phone number that page showed.</li>
+      <li>Microsoft, Apple and Google never lock your browser or ask you to phone them from a web page.</li>
+      <li>If you already called or let someone connect to your computer, contact your bank and run a security scan.</li>
+    </ul>
+
+    <section id="why" hidden>
+      <h2>Why it was blocked</h2>
+      <ul id="reasons"></ul>
+    </section>
+
+    <button id="close" type="button">Close this tab</button>
+    <p class="foot">Lock-Screen Scam Guard</p>
+  </main>
+  <script src="blocked.js"></script>
+</body>
+</html>

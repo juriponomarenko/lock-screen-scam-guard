@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Lock-Screen Scam Guard",
+  "version": "1.0.0",
+  "description": "Detects fake \"your computer is locked\" tech-support scam pages shown from blob: URLs and gets you out of them.",
+  "minimum_chrome_version": "133",
+  "permissions": ["scripting", "webNavigation", "tabs", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Lock-Screen Scam Guard"
+  }
+}

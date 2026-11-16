@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+  Benign: a large generated report (20,000 rows, about a megabyte of text)
+  shown from a blob: URL. The kind of document where a careless scanner would
+  cost the user time. It must be left alone, and inspected cheaply.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Export</title>
+<style>body { font-family: Arial, sans-serif; margin: 40px; } button { padding: 8px 16px; }</style>
+</head>
+<body>
+  <h1>Data export</h1>
+  <button id="open">View full export</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const rows = [];
+    for (let i = 1; i <= 20000; i++) {
+      rows.push(`<tr><td>${i}</td><td>Order ${100000 + i}</td><td>Shipped to warehouse ${i % 40}</td><td>${(i * 7.31).toFixed(2)}</td></tr>`);
+    }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8" /><title>Full export</title></head>
+      <body style="font-family: Arial, sans-serif; margin: 40px;">
+        <h1>Full export</h1>
+        <table border="1" cellpadding="4">
+          <tr><th>#</th><th>Order</th><th>Status</th><th>Total</th></tr>
+          ${rows.join('')}
+        </table>
+      </body>
+      </html>
+    `;
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  });
+</script>
+</body>
+</html>

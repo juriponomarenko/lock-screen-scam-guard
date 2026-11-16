@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  Benign: a scratchpad that lives in a blob: document and replaces the current
+  tab. It uses the same browser features a scam abuses, for ordinary reasons:
+  an "unsaved changes" prompt (beforeunload), its own right-click menu
+  (contextmenu + preventDefault) and a Ctrl+S shortcut (keydown + preventDefault).
+  It must be left alone.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scratchpad launcher</title>
+<style>body { font-family: Arial, sans-serif; margin: 40px; } button { padding: 8px 16px; }</style>
+</head>
+<body>
+  <h1>Scratchpad</h1>
+  <button id="open">Open scratchpad</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" /><title>Scratchpad</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          textarea { width: 100%; height: 240px; }
+          #menu { position: fixed; display: none; background: #fff; border: 1px solid #999; padding: 6px 12px; }
+        </style>
+      </head>
+      <body>
+        <h1>Scratchpad</h1>
+        <p id="status">Saved</p>
+        <textarea id="note" placeholder="Type here..."></textarea>
+        <div id="menu">Copy all</div>
+        <script>
+          let dirty = false;
+          const status = document.getElementById('status');
+          const menu = document.getElementById('menu');
+          document.getElementById('note').addEventListener('input', () => { dirty = true; status.textContent = 'Unsaved changes'; });
+          window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+          document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px'; menu.style.display = 'block';
+          });
+          document.addEventListener('click', () => { menu.style.display = 'none'; });
+          document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); dirty = false; status.textContent = 'Saved'; }
+          });
+        <\/script>
+      </body>
+      </html>
+    `;
+    window.location.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  });
+</script>
+</body>
+</html>

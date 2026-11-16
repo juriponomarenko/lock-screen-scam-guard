@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+  Benign: an invoice preview generated client-side and opened from a blob: URL.
+  It names a vendor ("Microsoft ... Support") and prints a phone number to call,
+  which is half of what a scam page has. With no scare language and no trapping
+  it must be left alone.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Invoices</title>
+<style>body { font-family: Arial, sans-serif; margin: 40px; } button { padding: 8px 16px; }</style>
+</head>
+<body>
+  <h1>Your invoices</h1>
+  <button id="open">Preview invoice INV-2041</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8" /><title>Invoice INV-2041</title></head>
+      <body style="font-family: Arial, sans-serif; margin: 40px;">
+        <h1>Invoice INV-2041</h1>
+        <p>Northwind Office Supplies</p>
+        <table border="1" cellpadding="8">
+          <tr><th>Item</th><th>Amount</th></tr>
+          <tr><td>Microsoft 365 Business with Premier Support (12 months)</td><td>$150.00</td></tr>
+          <tr><td>Windows 11 Pro licence</td><td>$199.00</td></tr>
+        </table>
+        <p>Questions about this invoice? Call our billing support team on 1-800-555-0142, Monday to Friday.</p>
+      </body>
+      </html>
+    `;
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  });
+</script>
+</body>
+</html>

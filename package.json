@@ -1,0 +1,14 @@
+{
+  "name": "lock-screen-scam-guard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome MV3 extension that detects fake lock-screen scam pages shown from blob: URLs.",
+  "scripts": {
+    "test": "node --test test/heuristics.test.js",
+    "test:e2e": "node --test --test-concurrency=1 test/e2e.test.mjs",
+    "serve": "node test/serve.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.17.0"
+  }
+}
