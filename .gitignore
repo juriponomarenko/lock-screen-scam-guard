@@ -1,1 +1,3 @@
 node_modules/
+# Chrome for Testing, if installed with: npx @puppeteer/browsers install chrome@stable
+chrome/

@@ -60,6 +60,7 @@ test('text: phone numbers need call-to-action wording next to them', () => {
   assert.equal(hook('Order reference 1-800-555-0199 shipped'), false, 'number without wording');
   assert.equal(hook('Call us on Monday. Report dated 2026-11-16.'), false, 'a date is not a phone number');
   assert.equal(hook('Contact the server at 192.168.1.1 for details'), false, 'an IP is not a phone number');
+  assert.equal(hook('Contact support if 192.168.100.200 is unreachable'), false, 'nor is one with long octets');
   assert.equal(hook('Call me maybe. Sessions 1,204 Conversions 87'), false, 'plain figures');
 });
 
@@ -71,11 +72,20 @@ test('text: a bare vendor name is not impersonation', () => {
   assert.equal(imp('We replaced the windows in the east wing'), false);
 });
 
-test('text: zero-width characters and full-width letters do not hide wording', () => {
-  const sneaky = 'Your com​puter has been lo‍cked. Ｃall Microsoft Support 1-800-555-0199';
-  const t = H.analyzeText(sneaky);
-  assert.equal(t.scare, true);
-  assert.equal(t.phoneCta, true);
+test('text: zero-width characters, full-width letters and curly quotes do not hide wording', () => {
+  const zwsp = String.fromCharCode(0x200b);
+  const zwj = String.fromCharCode(0x200d);
+  const fullWidthC = String.fromCharCode(0xff23);
+  const curly = String.fromCharCode(0x2019);
+  const sneaky = `Your com${zwsp}puter has been lo${zwj}cked. ${fullWidthC}all Microsoft Support 1-800-555-0199`;
+  assert.equal(H.analyzeText(sneaky).scare, true);
+  assert.equal(H.analyzeText(sneaky).phoneCta, true);
+  assert.equal(H.analyzeText(`Don${curly}t restart your computer`).scare, true);
+});
+
+test('text: billing wording about an account is not a device-lock claim', () => {
+  assert.equal(H.analyzeText('Your account has been suspended until the invoice is paid').scare, false);
+  assert.equal(H.analyzeText('Your computer has been locked').scare, true);
 });
 
 test('scripts: the provided scam script is recognised as trapping', () => {
@@ -109,7 +119,7 @@ test('scripts: legacy keyCode checks and inline handlers are recognised', () => 
 });
 
 test('verdict: provided scam page is blocked with the full score', () => {
-  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { scriptedRedirect: true, lockLayout: true }));
+  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { scriptedRedirect: true }));
   assert.equal(r.verdict, 'block');
   assert.equal(r.total, 15);
   assert.equal(r.kinds, 3);
@@ -117,30 +127,30 @@ test('verdict: provided scam page is blocked with the full score', () => {
 
 test('verdict: provided scam page is still blocked when found already open', () => {
   // No navigation data on the install-time sweep.
-  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT, { lockLayout: true }));
+  const r = H.score(signals(SCAM_TEXT, SCAM_SCRIPT));
   assert.equal(r.verdict, 'block');
 });
 
 test('verdict: provided benign report is allowed with a score of zero', () => {
-  const r = H.score(signals(REPORT_TEXT, '', { lockLayout: true }));
+  const r = H.score(signals(REPORT_TEXT, ''));
   assert.equal(r.verdict, 'allow');
   assert.equal(r.total, 0);
 });
 
 test('verdict: one kind of evidence is never enough', () => {
   const allow = (s, why) => assert.equal(H.score(s).verdict, 'allow', why);
-  allow({ phoneCta: true, impersonation: true, lockLayout: true }, 'invoice naming a vendor with a support line');
-  allow({ phoneCta: true, impersonation: true, errorCode: true, lockLayout: true }, 'vendor error page with a helpline');
+  allow({ phoneCta: true, impersonation: true }, 'invoice naming a vendor with a support line');
+  allow({ phoneCta: true, impersonation: true, errorCode: true }, 'vendor error page with a helpline');
   allow({ beforeunload: true, contextMenuBlocked: true }, 'editor with unsaved-changes prompt and custom menu');
   allow({ fullscreen: true, beforeunload: true }, 'presentation viewer');
-  allow({ scare: true, impersonation: true, lockLayout: true }, 'antivirus scan report');
+  allow({ scare: true, impersonation: true }, 'antivirus scan report');
   allow({ keysBlocked: true, scriptedRedirect: true }, 'page that only disables F12');
 });
 
-test('verdict: text-only evidence blocks a lock screen but only warns on a document', () => {
-  const text = { scare: true, phoneCta: true, impersonation: true };
-  assert.equal(H.score({ ...text, lockLayout: true }).verdict, 'block');
-  assert.equal(H.score({ ...text, lockLayout: false }).verdict, 'warn');
+test('verdict: words alone never navigate the tab, however scam-like', () => {
+  const text = { scare: true, phoneCta: true, impersonation: true, errorCode: true, scriptedRedirect: true };
+  assert.equal(H.score(text).verdict, 'warn');
+  assert.equal(H.score({ ...text, keysBlocked: true }).verdict, 'block');
 });
 
 test('verdict: trapping alone warns, and only when it is heavy', () => {

@@ -12,8 +12,8 @@
  * Evidence about trapping comes from three layers, cheapest and least
  * intrusive first:
  *   1. static   - read the page's inline scripts (works on an already-open page)
- *   2. passive  - watch the user's own escape attempts and see if the page cancelled them
- *   3. probe    - fire synthetic F5/F11/F12, but only at a page whose text is already suspicious
+ *   2. passive  - when the user presses F5/F11/F12 or right-clicks, see if the page cancelled it
+ *   3. probe    - fire synthetic F5/F11/F12, but only at a page that claims the device is locked
  */
 (() => {
   'use strict';
@@ -38,15 +38,23 @@
   const LARGE_DOCUMENT_CHARS = 100000;
   const FALLBACK_BANNER_MS = 3000;
 
-  /** Keys a legitimate page has no reason to cancel. Escape is left out: modals use it. */
+  /**
+   * Keys a legitimate page has no reason to cancel. Escape is left out (modals
+   * use it) and so are Ctrl chords (editors and terminals bind Ctrl+L, Ctrl+R).
+   */
   const ESCAPE_KEYS = new Set(['F5', 'F11', 'F12']);
-  const ESCAPE_CHORDS = new Set(['r', 'w', 'l', 't', 'n']);
+  /** Elements whose text is source code, not page content. */
+  const NON_CONTENT = new Set(['script', 'style', 'noscript', 'template']);
+  const BANNER_MARK = 'data-lsg-banner';
   const TRAP_EVENTS = ['beforeunload', 'keydown', 'keyup', 'keypress', 'contextmenu'];
   const INLINE_HANDLERS = ['onbeforeunload', 'oncontextmenu', 'onkeydown', 'onkeyup', 'onkeypress'];
 
   const observed = { keysBlocked: false, contextMenuBlocked: false };
-  /** Trap code seen so far. Sticky: handlers outlive a script tag the page removes. */
-  const seenCode = {};
+  /** Inline code read so far, and what the heuristics make of it. */
+  const readScripts = new WeakSet();
+  const readHandlers = new Set();
+  let codeSeen = '';
+  let seenCode = {};
   let evaluations = 0;
   let probes = 0;
   let debounce = 0;
@@ -59,74 +67,93 @@
 
   // ------------------------------------------------------------- evidence
 
-  function inlineScriptText() {
-    let js = '';
-    for (const script of document.scripts) {
-      if (script.src) continue;
-      js += script.textContent + '\n';
-      if (js.length > MAX_SCRIPT_CHARS) break;
+  /**
+   * Static look at the page's own code. Source is accumulated as it is first
+   * seen and never dropped, so a script tag the page removes after running
+   * still counts, and nothing is re-read unless new code has appeared.
+   */
+  function scanCode() {
+    let added = '';
+    // querySelectorAll rather than document.scripts: it also finds SVG <script>.
+    for (const script of document.querySelectorAll('script')) {
+      if (readScripts.has(script)) continue;
+      readScripts.add(script);
+      if (!script.src) added += script.textContent + '\n';
     }
-    const selector = INLINE_HANDLERS.map((name) => `[${name}]`).join(',');
-    for (const element of document.querySelectorAll(selector)) {
+    for (const element of document.querySelectorAll(INLINE_HANDLERS.map((name) => `[${name}]`).join(','))) {
       for (const name of INLINE_HANDLERS) {
-        const code = element.getAttribute(name);
-        if (code) js += `${name}="${code}"\n`;
+        const handler = element.hasAttribute(name) ? `${name}="${element.getAttribute(name)}"\n` : '';
+        if (handler && !readHandlers.has(handler)) {
+          readHandlers.add(handler);
+          added += handler;
+        }
       }
     }
-    return js;
+    if (!added || codeSeen.length >= MAX_SCRIPT_CHARS) return;
+    codeSeen = (codeSeen + added).slice(0, MAX_SCRIPT_CHARS);
+    seenCode = H.analyzeScripts(codeSeen);
+  }
+
+  /** Text nodes that are page content (not script or style source), in document order. */
+  function* contentTextNodes(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const parent = walker.currentNode.parentElement;
+      if (parent && !NON_CONTENT.has(parent.localName)) yield walker.currentNode;
+    }
   }
 
   /**
-   * innerText is the *visible* text (no script source, no display:none
-   * padding), but it needs layout over the whole document. A generated report
-   * can be megabytes, so past a size limit read only the leading text nodes.
+   * The text a user can see. innerText gives exactly that (no script source,
+   * no display:none padding) but lays out the whole document, and a generated
+   * report can be megabytes. So measure first, and past the limit read only
+   * the leading rendered text nodes. Non-HTML documents (SVG) have no
+   * innerText and always take the second path.
    */
   function visibleText() {
-    const body = document.body;
-    if (!body) return '';
-    if (body.textContent.length <= LARGE_DOCUMENT_CHARS) return body.innerText;
+    const root = document.body || document.documentElement;
+    if (!root) return '';
 
-    const skipped = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    if (typeof root.innerText === 'string') {
+      let size = 0;
+      for (const node of contentTextNodes(root)) {
+        size += node.length;
+        if (size > LARGE_DOCUMENT_CHARS) break;
+      }
+      if (size <= LARGE_DOCUMENT_CHARS) return root.innerText;
+    }
+
     let text = '';
-    while (text.length < MAX_TEXT_CHARS && walker.nextNode()) {
-      const parent = walker.currentNode.parentElement;
-      if (parent && !skipped.has(parent.tagName)) text += walker.currentNode.nodeValue + ' ';
+    for (const node of contentTextNodes(root)) {
+      if (!node.parentElement.checkVisibility()) continue;
+      text += node.nodeValue + ' ';
+      if (text.length >= MAX_TEXT_CHARS) break;
     }
     return text;
   }
 
   function collectSignals() {
     const text = H.analyzeText(`${document.title}\n${visibleText()}`);
-    for (const [name, found] of Object.entries(H.analyzeScripts(inlineScriptText()))) {
-      if (found) seenCode[name] = true;
-    }
-    const code = seenCode;
-    const scroller = document.scrollingElement || document.documentElement;
+    scanCode();
     const nav = globalThis.__lsgNav || {};
     return {
       impersonation: text.impersonation,
       scare: text.scare,
       phoneCta: text.phoneCta,
       errorCode: text.errorCode,
-      keysBlocked: code.keysBlocked || observed.keysBlocked,
-      contextMenuBlocked: code.contextMenuBlocked || observed.contextMenuBlocked,
-      beforeunload: code.beforeunload,
-      fullscreen: code.fullscreen || Boolean(document.fullscreenElement),
-      inputLock: code.inputLock || Boolean(document.pointerLockElement),
-      historyTrap: code.historyTrap,
+      keysBlocked: Boolean(seenCode.keysBlocked || observed.keysBlocked),
+      contextMenuBlocked: Boolean(seenCode.contextMenuBlocked || observed.contextMenuBlocked),
+      beforeunload: Boolean(seenCode.beforeunload),
+      fullscreen: Boolean(seenCode.fullscreen || document.fullscreenElement),
+      inputLock: Boolean(seenCode.inputLock || document.pointerLockElement),
+      historyTrap: Boolean(seenCode.historyTrap),
       scriptedRedirect: Boolean(nav.scriptedRedirect),
-      // Terse and not scrollable: looks like a lock screen, not a document.
-      lockLayout:
-        text.textLength <= H.LOCK_SCREEN_MAX_TEXT && scroller.scrollHeight <= window.innerHeight * 1.25,
     };
   }
 
   /** Layer 2: did the page cancel a real escape attempt by the user? */
   function watchEscapeAttempts() {
-    const isEscapeKey = (event) =>
-      ESCAPE_KEYS.has(event.key) ||
-      ((event.ctrlKey || event.metaKey) && ESCAPE_CHORDS.has(String(event.key).toLowerCase()));
+    const isEscapeKey = (event) => ESCAPE_KEYS.has(event.key);
 
     const watch = (type, matches, flag) => {
       window.addEventListener(
@@ -181,8 +208,9 @@
     let signals = collectSignals();
     let result = H.score(signals);
 
-    const suspiciousText = signals.scare || signals.impersonation || signals.phoneCta;
-    if (result.verdict !== 'block' && suspiciousText && !signals.keysBlocked && probes < MAX_PROBES) {
+    // Probe only a page that already claims the device is locked or infected.
+    // A vendor name or a phone number alone (an invoice) is not enough to poke it.
+    if (result.verdict !== 'block' && signals.scare && !signals.keysBlocked && probes < MAX_PROBES) {
       probe();
       signals = collectSignals();
       result = H.score(signals);
@@ -264,9 +292,11 @@
   }
 
   function showBanner(reasons) {
-    if (banner) return;
+    // An HTML banner does not render inside an SVG or XML document.
+    if (banner || !document.body) return;
 
     const host = document.createElement('div');
+    host.setAttribute(BANNER_MARK, '');
     // Popover puts the banner in the top layer: above any z-index and above a
     // fullscreen element. The inline !important rules undo the popover defaults.
     host.setAttribute('popover', 'manual');
@@ -351,12 +381,17 @@
 
   function start() {
     globalThis.__lsgDetector.recheck = () => evaluate(true);
+    // After an extension reload the previous copy of this script is orphaned in
+    // its own isolated world. Its banner can no longer reach the worker; drop it.
+    for (const stale of document.querySelectorAll(`[${BANNER_MARK}]`)) stale.remove();
     evaluate();
     if (blocked) return;
 
     // Content injected after load (a common way to dodge a one-shot scan).
+    // Watch the document node, not the root element: document.write() and
+    // root replacement swap the root element out.
     observer = new MutationObserver(scheduleEvaluation);
-    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    observer.observe(document, { childList: true, subtree: true, characterData: true });
     setTimeout(stopObserving, OBSERVE_MS);
 
     // Handlers registered late: look again once the page has settled.

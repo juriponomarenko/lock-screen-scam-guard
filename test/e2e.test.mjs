@@ -2,8 +2,8 @@
 //
 //   npm run test:e2e
 //
-// Needs a Chrome for Testing / Chromium binary (branded Chrome refuses
-// automation-loaded extensions). Point CHROME_PATH at one, or install it with
+// Needs a Chrome binary: point CHROME_PATH at chrome.exe / chrome (an installed
+// Chrome works, it runs with a throwaway profile), or install Chrome for Testing:
 //   npx @puppeteer/browsers install chrome@stable
 import test, { before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,7 +30,7 @@ function findChrome() {
       .pop();
     if (found) return found;
   }
-  throw new Error('No Chrome for Testing found. Set CHROME_PATH (see the top of this file).');
+  throw new Error('No Chrome found. Set CHROME_PATH (see the top of this file).');
 }
 
 let browser;
@@ -75,6 +75,32 @@ async function openSampleViaClick(name, buttonSelector) {
   const page = await target.page();
   await page.bringToFront();
   return { opener, page };
+}
+
+/** Navigate a fresh tab to a blob: document built from markup, the way malicious.html does. */
+async function openBlob(markup, type = 'text/html') {
+  const page = await browser.newPage();
+  page.prompts = [];
+  page.on('dialog', (dialog) => page.prompts.push(dialog.type()));
+  await page.goto(sample('benign.html'));
+  await page
+    .evaluate((html, mime) => (location.href = URL.createObjectURL(new Blob([html], { type: mime }))), markup, type)
+    .catch(() => {});
+  return page;
+}
+
+/**
+ * Run `openPages` with the extension removed, then install it: the "already on
+ * the page" case. The finally keeps one failed test from leaving the rest of
+ * the suite without an extension.
+ */
+async function installAfter(openPages) {
+  await browser.uninstallExtension(extensionId);
+  try {
+    return await openPages();
+  } finally {
+    await installExtension();
+  }
 }
 
 async function expectBlocked(reasonsToInclude = []) {
@@ -166,13 +192,9 @@ async function setFileAccess(allowed) {
   await page.goto('chrome://extensions/');
   await page.evaluate(
     (id, fileAccess) =>
-      new Promise((resolve) => {
-        // Changing file access restarts the extension, and branded Chrome only
-        // restarts an unpacked extension while Developer mode is on.
-        chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, () =>
-          chrome.developerPrivate.updateExtensionConfiguration({ extensionId: id, fileAccess }, resolve)
-        );
-      }),
+      new Promise((resolve) =>
+        chrome.developerPrivate.updateExtensionConfiguration({ extensionId: id, fileAccess }, resolve)
+      ),
     extensionId,
     allowed
   );
@@ -209,6 +231,15 @@ before(async () => {
     enableExtensions: true,
     args: ['--enable-unsafe-extension-debugging'],
   });
+  // Developer mode on, as it is for anyone who loaded the extension unpacked.
+  // Branded Chrome will not restart an unpacked extension without it.
+  const settings = await browser.newPage();
+  await settings.goto('chrome://extensions/');
+  await settings.evaluate(
+    () => new Promise((resolve) => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, resolve))
+  );
+  await settings.close();
+
   await installExtension();
   // Let the install-time sweep finish, so the first test exercises the
   // navigation path alone rather than racing it.
@@ -351,6 +382,13 @@ test('benign editor keeps its unsaved-changes prompt, shortcut and custom menu',
   await page.keyboard.up('Control');
   assert.equal(await page.$eval('#status', (s) => s.textContent), 'Saved', 'Ctrl+S shortcut');
 
+  await page.keyboard.down('Control');
+  await page.keyboard.press('l');
+  await page.keyboard.up('Control');
+  assert.equal(await page.$eval('#status', (s) => s.textContent), 'Selected all', 'Ctrl+L shortcut');
+  await sleep(500);
+  assert.equal(await hasBanner(page), false, 'using an app shortcut must not raise the scam banner');
+
   await page.type('#note', ' more');
   await page.goto('about:blank').catch(() => {});
   assert.deepEqual(dialogs, ['beforeunload'], 'the page still gets to ask about unsaved changes');
@@ -424,39 +462,111 @@ test('the banner stays on top when the page goes fullscreen', async () => {
   assert.ok(page.url().startsWith('blob:'));
 });
 
+// ------------------------------------------------- variants found in review
+
+const LOCK_TEXT = `<div style="text-align:center;color:#fff"><h1>Your computer has been locked</h1>
+  <p>Unusual activity has been detected on this device. Do not restart or shut down your computer.</p>
+  <p>Call Microsoft Support immediately:</p><div>1-800-555-0199</div><p>Error Code: 0x800704cf</p></div>`;
+const LOCK_TRAPS = `
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('keydown', (e) => { if (['F5', 'F11', 'F12'].includes(e.key) || e.ctrlKey) e.preventDefault(); });
+  window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; });`;
+const htmlPage = (title, body, script = '') =>
+  `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>` +
+  `<body style="margin:0;background:#002bff;height:100vh">${body}${script ? `<script>${script}</` + `script>` : ''}</body></html>`;
+const base64 = (text) => Buffer.from(text, 'utf8').toString('base64');
+
+test('scam that rewrites itself with document.write() after load is caught', async () => {
+  const lockScreen = htmlPage('Windows Security Alert', LOCK_TEXT, LOCK_TRAPS);
+  await openBlob(
+    htmlPage(
+      'Loading',
+      '<p>Loading...</p>',
+      `setTimeout(() => { document.open(); document.write(atob('${base64(lockScreen)}')); document.close(); }, 3000);`
+    )
+  );
+  // beforeunload can only come from reading the rewritten page's new script.
+  await expectBlocked(['scare', 'phoneCta', 'keysBlocked', 'beforeunload']);
+});
+
+test('scam served as an SVG document is caught', async () => {
+  const escaped = LOCK_TRAPS.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  await openBlob(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><title>Windows Security Alert</title>' +
+      '<rect width="100%" height="100%" fill="#002bff"/>' +
+      '<text x="40" y="80" fill="#fff" font-size="28">Your computer has been locked</text>' +
+      '<text x="40" y="130" fill="#fff" font-size="20">Call Microsoft Support immediately: 1-800-555-0199</text>' +
+      `<script>${escaped}</` + 'script></svg>',
+    'image/svg+xml'
+  );
+  await expectBlocked(['scare', 'phoneCta', 'keysBlocked', 'beforeunload']);
+});
+
+test('a large script and hidden filler do not hide the lock-screen text', async () => {
+  const filler = `<div style="display:none">${'lorem ipsum dolor sit amet '.repeat(1000)}</div>`;
+  await openBlob(htmlPage('Notice', filler + LOCK_TEXT, `/*${'x'.repeat(120000)}*/` + LOCK_TRAPS));
+  await expectBlocked(['scare', 'phoneCta', 'impersonation', 'errorCode']);
+});
+
+test('a short document that only quotes a scam gets the banner and is never navigated', async () => {
+  const page = await openBlob(
+    htmlPage(
+      'Ticket 4821',
+      '<p style="color:#fff">Customer reports a pop-up saying: "Your computer has been locked. ' +
+        'Call Microsoft Support at 1-800-555-0199."</p>'
+    )
+  );
+  await waitFor(() => hasBanner(page).catch(() => false), 'the warning banner');
+  await sleep(2000);
+  assert.ok(page.url().startsWith('blob:'), 'words alone never navigate the tab');
+  assert.equal(await blockedPage(), undefined);
+  assert.equal((await detectorState(page)).verdict, 'warn');
+});
+
+test('reloading the extension leaves exactly one banner, and it still works', async () => {
+  const page = await openSample('extra/malicious-image-only.html');
+  await waitFor(() => hasBanner(page).catch(() => false), 'the warning banner');
+
+  await inServiceWorker('chrome.runtime.reload(); return true;').catch(() => {});
+  await sleep(2500); // old copy orphaned, new copy injected by the install-time sweep
+  const banners = () => page.evaluate(() => document.querySelectorAll('div[popover]').length);
+  await waitFor(async () => (await banners()) === 1, 'a single banner after the reload');
+
+  await clickBannerButton(page, 'button.leave');
+  await expectBlocked(['keysBlocked', 'beforeunload']);
+});
+
 // ------------------------------------------------- already open when installed
 
 test('scam already open, and already clicked on, when the extension is installed', async () => {
-  await browser.uninstallExtension(extensionId);
-  const page = await openSample('malicious.html');
-  await waitFor(() => page.url().startsWith('blob:'), 'the lock screen');
-  await page.mouse.click(200, 200); // a user gesture arms the "Leave site?" prompt
-  await sleep(300);
-
-  await installExtension();
+  const page = await installAfter(async () => {
+    const opened = await openSample('malicious.html');
+    await waitFor(() => opened.url().startsWith('blob:'), 'the lock screen');
+    await opened.mouse.click(200, 200); // a user gesture arms the "Leave site?" prompt
+    await sleep(300);
+    return opened;
+  });
   await expectBlocked(['scare', 'phoneCta', 'keysBlocked']);
   assert.deepEqual(page.prompts, [], 'the page never got to show "Leave site?"');
 });
 
 test('layered scam already open in fullscreen with the keyboard locked', async () => {
-  await browser.uninstallExtension(extensionId);
-  const page = await openSample('extra/malicious-layered.html');
-  await waitFor(
-    async () => page.url().startsWith('blob:') && (await page.title().catch(() => '')).includes('Defender'),
-    'the lock screen'
-  );
-  await page.mouse.click(200, 200); // goes fullscreen + locks keyboard + arms beforeunload
-  await sleep(500);
-
-  await installExtension();
+  const page = await installAfter(async () => {
+    const opened = await openSample('extra/malicious-layered.html');
+    await waitFor(
+      async () => opened.url().startsWith('blob:') && (await opened.title().catch(() => '')).includes('Defender'),
+      'the lock screen'
+    );
+    await opened.mouse.click(200, 200); // goes fullscreen + locks keyboard + arms beforeunload
+    await sleep(500);
+    return opened;
+  });
   await expectBlocked(['scare', 'phoneCta', 'inputLock']);
   assert.deepEqual(page.prompts, [], 'the page never got to show "Leave site?"');
 });
 
 test('benign report already open when the extension is installed is left alone', async () => {
-  await browser.uninstallExtension(extensionId);
-  const { page } = await openSampleViaClick('benign.html', '#view-report');
-  await installExtension();
+  const { page } = await installAfter(() => openSampleViaClick('benign.html', '#view-report'));
   await sleep(2500);
   assert.ok(page.url().startsWith('blob:'));
   assert.equal(await page.$eval('h1', (h) => h.textContent), 'Monthly Report');

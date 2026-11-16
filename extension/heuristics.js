@@ -11,7 +11,8 @@
  *
  * One kind on its own is something legitimate pages do every day (an invoice
  * has a phone number, an editor has an "unsaved changes" prompt). The verdict
- * therefore needs two kinds to agree before the tab is ever touched.
+ * therefore needs two kinds to agree before anything is shown, and the tab is
+ * only navigated away when one of them is trapping.
  */
 (function (root) {
   'use strict';
@@ -52,18 +53,21 @@
 
   const MAX_TEXT = 20000;
   const MAX_SCRIPT = 200000;
-  /** A lock screen is terse; a document about scams is not. */
-  const LOCK_SCREEN_MAX_TEXT = 1500;
 
   // ---------------------------------------------------------------- content
 
-  const ZERO_WIDTH = /[­​-‍⁠﻿]/g;
+  const chars = (...codes) => String.fromCharCode(...codes);
+  // Soft hyphen, zero-width space / non-joiner / joiner, word joiner, BOM.
+  const INVISIBLE = new RegExp(`[${chars(0xad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff)}]`, 'g');
+  // Typographic single quotes and the modifier apostrophe: "don't" must match either way.
+  const CURLY_APOSTROPHE = new RegExp(`[${chars(0x2018, 0x2019, 0x02bc)}]`, 'g');
 
   function normalizeText(text) {
     return String(text || '')
       .slice(0, MAX_TEXT)
       .normalize('NFKC')
-      .replace(ZERO_WIDTH, '')
+      .replace(INVISIBLE, '')
+      .replace(CURLY_APOSTROPHE, "'")
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -79,7 +83,7 @@
 
   const SCARE = [
     // "Your computer has been locked", "this device is infected"
-    /\b(?:computer|pc|device|system|mac|laptop|browser|windows|screen|account|iphone|phone)\b[^.!?]{0,40}\b(?:locked|blocked|infected|compromised|hacked|disabled|suspended|at risk|in danger)\b/i,
+    /\b(?:computer|pc|device|system|mac|laptop|browser|windows|screen|iphone|phone)\b[^.!?]{0,40}\b(?:locked|blocked|infected|compromised|hacked|disabled|suspended|at risk|in danger)\b/i,
     // "Do not restart or shut down"
     /\b(?:do not|don'?t|never)\b[^.!?]{0,15}\b(?:restart|reboot|shut\s?down|turn off|power off|close|ignore)\b/i,
     // "Trojan spyware detected"
@@ -95,9 +99,12 @@
   const CALL_TO_ACTION =
     /\b(?:call|dial|contact|phone|ring|speak|talk|reach)\b|\b(?:support|helpline|toll[\s-]?free|technician|help\s?desk)\b/i;
 
+  const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
   /** A phone number with "call / contact / support" wording right next to it. */
   function hasPhoneCta(text) {
     for (const match of text.matchAll(PHONE)) {
+      if (IPV4.test(match[0])) continue;
       const digits = match[0].replace(/\D/g, '').length;
       if (digits < 9 || digits > 15) continue;
       const context = text.slice(Math.max(0, match.index - 120), match.index + match[0].length + 60);
@@ -159,7 +166,7 @@
   }
 
   /**
-   * @param {object} signals booleans named after WEIGHTS, plus `lockLayout`
+   * @param {object} signals booleans named after WEIGHTS
    * @returns {{verdict: 'allow'|'warn'|'block', total: number, content: number,
    *            trap: number, kinds: number, reasons: string[]}}
    */
@@ -179,9 +186,9 @@
     const kinds = Number(deceptive) + Number(hooked) + Number(trapped);
 
     let verdict = 'allow';
-    if (total >= THRESHOLDS.block && kinds >= 2 && (trapped || s.lockLayout)) {
-      // Without trap evidence, only block something that looks like a lock
-      // screen (terse, fills the viewport) rather than a document.
+    if (total >= THRESHOLDS.block && kinds >= 2 && trapped) {
+      // Navigating away destroys the page, so it needs behaviour as well as
+      // words: a document that merely quotes a scam is never navigated.
       verdict = 'block';
     } else if ((total >= THRESHOLDS.warn && kinds >= 2) || trap >= THRESHOLDS.heavyTrap) {
       verdict = 'warn';
@@ -192,7 +199,6 @@
   const api = Object.freeze({
     WEIGHTS,
     THRESHOLDS,
-    LOCK_SCREEN_MAX_TEXT,
     normalizeText,
     analyzeText,
     analyzeScripts,

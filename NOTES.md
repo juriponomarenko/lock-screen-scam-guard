@@ -1,5 +1,7 @@
 # Detection note
 
+**In short.** The extension inspects only top-level `blob:` documents, because showing content without a scannable URL is the scam's defining trick. It scores three kinds of evidence: deceptive wording, a phone number to call, and trapping behaviour. It redirects the tab only when two kinds agree and one of them is trapping; weaker evidence gets a dismissible banner. That split exists because a legitimate preview, invoice or editor shares any one of those traits with the scam, and being wrong about a redirect destroys the user's page. The main risks are a legitimate blob page that both talks like a scam and traps the user (false positive), and a scam that hides its content in an iframe, paints it later than 15 seconds, or uses wording outside the English patterns (false negatives).
+
 ```mermaid
 flowchart TD
     A[Tab commits a navigation] --> B{Top-level URL<br/>starts with blob: ?}
@@ -30,21 +32,21 @@ The scam never navigates to a scannable URL; it builds the lock screen in memory
 |---|---|
 | Deception | claims the device is locked / infected / at risk (2), poses as an OS or security vendor (2), made-up error code (1) |
 | Hook | a phone number with "call / contact / support" wording next to it (3) |
-| Trap | cancels reload / fullscreen / devtools keys (3), locks keyboard or pointer (3), `beforeunload` (2), fullscreen (2), cancels right-click (1), Back-button tampering (1) |
+| Trap | cancels F5 / F11 / F12 (3), locks keyboard or pointer (3), `beforeunload` (2), fullscreen (2), cancels right-click (1), Back-button tampering (1) |
 | Provenance | the blob replaced the tab by script, with no user gesture (1) |
 
 Trap evidence is gathered in three layers, least intrusive first:
 
-1. **Static** – read the blob's own inline scripts. Works on a page that was already open at install time.
-2. **Passive** – when the user presses F5 / Ctrl+W / right-clicks, check afterwards whether the page cancelled it.
-3. **Probe** – dispatch synthetic F5 / F11 / F12 and see if the page cancels them. Only done when the text is already suspicious, so a clean page is never poked.
+1. **Static**: read the blob's own inline scripts. Works on a page that was already open at install time.
+2. **Passive**: when the user presses F5 / F11 / F12 or right-clicks, check afterwards whether the page cancelled it.
+3. **Probe**: dispatch synthetic F5 / F11 / F12 and see if the page cancels them. Only done on a page that already claims the device is locked or infected, so an ordinary page is never poked.
 
 **3. Verdict**
 
 | Verdict | Rule | Action |
 |---|---|---|
-| Block | score ≥ 6 **and** two kinds agree **and** (it traps the user, or it looks like a lock screen: terse and non-scrolling) | navigate the tab to the extension's warning page |
-| Warn | score ≥ 5 with two kinds, or heavy trapping alone (trap score ≥ 6) | dismissible banner with a "Leave this page" button |
+| Block | score of 6 or more **and** two kinds agree **and** one of them is trapping | navigate the tab to the extension's warning page |
+| Warn | score of 5 or more with two kinds, or heavy trapping alone (trap score of 6 or more) | dismissible banner with a "Leave this page" button |
 | Allow | anything else | nothing at all |
 
 `malicious.html` scores 15 with all three kinds. `benign.html` scores 0.
@@ -55,22 +57,27 @@ The detector first neutralises the page's key and right-click handlers, then the
 ## Why this approach
 
 - **One kind of evidence is ordinary; two together are not.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. A security article quotes "your computer has been locked". None of those may be touched, and each is a test case. Requiring two kinds to agree is what separates them from the scam.
-- **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs content and behaviour to agree. Anything weaker gets a banner the user can dismiss.
-- **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: 18 ms on a 20,000-row generated report, with a cap for larger documents.
+- **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs trapping behaviour as well as words. A document that only quotes a scam, however closely, gets a banner the user can dismiss.
+- **Narrow definitions of "trap".** Only F5, F11 and F12 count as escape keys, because editors and terminals bind Ctrl+L, Ctrl+R and Escape for ordinary reasons. A vendor name counts as deception only when the page also traps the user.
+- **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: about 20 ms on a 20,000-row generated report, which is read through a bounded walk rather than in full.
 - **Layers instead of one clever trick.** Each trap-detection layer covers the previous one's blind spot: obfuscated scripts defeat the static read but not the probe; a page that ignores synthetic events defeats the probe but not the user's own key press.
 
 ## Known risks
 
 **False positives**
-- A blob document that *both* talks like a scam *and* traps the user, such as a phishing-awareness simulator, is blocked.
-- A long security article in a blob that quotes scare wording and prints a helpline gets the banner (not a redirect). `samples/extra/edge-security-article.html` shows this.
+- A blob document that *both* talks like a scam *and* traps the user, such as a phishing-awareness simulator or an editor (with an exit prompt and F-key handling) holding an article about scams, is blocked.
+- A document that quotes scare wording and prints a phone number gets the banner, not a redirect: a long security article (`samples/extra/edge-security-article.html`) or a short help-desk ticket.
 - A blob-hosted game or kiosk using fullscreen + keyboard lock + an exit prompt gets the banner.
+- A long hyphenated order number next to "contact support" is read as a phone number. On its own that never triggers anything.
 
 **False negatives**
+- **Content inside an iframe of the blob document is not inspected.** Wrapping the same lock screen in a full-viewport iframe evades detection entirely. Left out on purpose: it needs multi-frame inspection (see "related techniques" below).
+- **The page is watched for 15 seconds after load.** A lock screen painted later is examined only when the user presses F5 / F11 / F12, right-clicks, or the page goes fullscreen.
 - Wording outside the English patterns, or wording I did not anticipate. Traps still earn the banner.
-- A lock screen drawn entirely as an image or canvas gets the banner rather than a block, because behaviour alone is not proof (`malicious-image-only.html`).
+- A lock screen drawn entirely as an image or canvas, or one with wording but no detectable trapping, gets the banner rather than a redirect (`malicious-image-only.html`).
 - A scam with no phone number and no trapping, for example "download this cleaner", is outside what this detects.
 - Scripts loaded from an external URL are not read; the probe and passive layers still apply.
+- In an SVG document a redirect works, but the banner cannot be drawn, so warn-level cases there show nothing.
 - A page that spams `alert()` in a tight loop keeps the renderer busy, so the detector cannot run. Chrome's own dialog throttling is the only mitigation there.
 - A blob created by a `file://` page can only be inspected if "Allow access to file URLs" is on. When it is off the toolbar icon shows a `!` on that tab instead of failing silently.
 
@@ -83,13 +90,13 @@ The detector first neutralises the page's key and right-click handlers, then the
 - the escape is driven from the service worker, which the page cannot reach, and uses tab discard when a prompt is possible;
 - the banner is shown in the browser's top layer and re-raised on fullscreen changes, so it stays visible.
 
-Late-painted content (`malicious-delayed.html`) is covered by a 15-second mutation watch, and a script tag that deletes itself after running is covered by remembering what was seen.
+Late-painted content (`malicious-delayed.html`) and a page that rewrites itself with `document.write()` are covered by a 15-second mutation watch on the document node. A script tag that deletes itself after running is covered by remembering what was seen.
 
 ## Bonus: related techniques (not implemented)
 
 The same idea, "content shown without a scannable URL of its own", has other carriers:
 
-- a `blob:`, `data:` or `srcdoc` **iframe covering the viewport** of an innocent-looking page;
+- a `blob:`, `data:` or `srcdoc` **iframe covering the viewport**, either of an innocent-looking page or inside the blob document itself (today's main blind spot);
 - `about:blank` plus `document.write`, or a `javascript:` URL document;
 - `data:` documents opened in a new window;
 - a service worker that synthesises the response, so the URL looks normal but was never served;

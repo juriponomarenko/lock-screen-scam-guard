@@ -3,7 +3,7 @@
   Benign: a scratchpad that lives in a blob: document and replaces the current
   tab. It uses the same browser features a scam abuses, for ordinary reasons:
   an "unsaved changes" prompt (beforeunload), its own right-click menu
-  (contextmenu + preventDefault) and a Ctrl+S shortcut (keydown + preventDefault).
+  (contextmenu + preventDefault) and Ctrl+S / Ctrl+L shortcuts (keydown + preventDefault).
   It must be left alone.
 -->
 <html lang="en">
@@ -46,6 +46,7 @@
           document.addEventListener('click', () => { menu.style.display = 'none'; });
           document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); dirty = false; status.textContent = 'Saved'; }
+            if (e.ctrlKey && e.key.toLowerCase() === 'l') { e.preventDefault(); document.getElementById('note').select(); status.textContent = 'Selected all'; }
           });
         <\/script>
       </body>

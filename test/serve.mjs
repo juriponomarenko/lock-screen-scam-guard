@@ -9,13 +9,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 's
 /** @returns {Promise<{origin: string, close: () => Promise<void>}>} */
 export function startServer(port = 0) {
   const server = http.createServer(async (request, response) => {
-    const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
-    const file = path.resolve(ROOT, '.' + pathname);
-    if (!file.startsWith(ROOT + path.sep) || path.extname(file) !== '.html') {
-      response.writeHead(404).end('Not found');
-      return;
-    }
     try {
+      // Inside the try: a malformed escape such as "/%E0%A4%A" makes decodeURIComponent throw.
+      const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+      const file = path.resolve(ROOT, '.' + pathname);
+      if (!file.startsWith(ROOT + path.sep) || path.extname(file) !== '.html') throw new Error('not served');
       const body = await readFile(file);
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       response.end(body);
