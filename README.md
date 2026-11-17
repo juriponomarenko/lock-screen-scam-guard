@@ -114,11 +114,13 @@ The judgement calls behind those numbers:
 | `benign.html` | provided report viewer | untouched |
 | `extra/benign-invoice.html` | vendor name + support phone number | untouched |
 | `extra/benign-editor.html` | unsaved-changes prompt, custom right-click menu, Ctrl+S, Ctrl+L | untouched, all of them still work |
-| `extra/benign-large-report.html` | 20,000-row generated report | untouched, inspected in about 20 ms |
+| `extra/benign-large-report.html` | 20,000-row generated report | untouched, inspected in about 40 ms |
 | `extra/edge-security-article.html` | article that quotes scam wording and prints a helpline | banner only, never navigated |
+| `extra/edge-security-leaflet.html` | short, non-scrolling awareness leaflet quoting scam wording | banner only, never navigated |
 | `extra/malicious-obfuscated.html` | number as an image, handlers assembled at run time | blocked (probe) |
 | `extra/malicious-obfuscated.html?trusted=1` | also ignores synthetic events | blocked when the user presses F5 |
 | `extra/malicious-delayed.html` | paints the lock screen after 2.5 s | blocked when it appears |
+| `extra/malicious-attribute-reveal.html?attribute=hidden` | reveals existing scam content after 2.5 s; also supports `class` and `style` | blocked when it appears |
 | `extra/malicious-layered.html` | blob-to-blob hop, history trap, fullscreen, keyboard lock | blocked |
 | `extra/malicious-image-only.html` | all text drawn on a canvas | banner; "Leave this page" works |
 
@@ -136,7 +138,7 @@ npm test
 npm run test:e2e
 ```
 
-- `npm test` runs 17 unit tests on the heuristics.
-- `npm run test:e2e` runs 26 tests that load the unpacked extension into a real Chrome. They cover every sample above, plus: already open at install (with and without a prior click), service worker asleep, Back button after a block, extension reload, `file://` with and without file access, a `document.write()` rewrite, an SVG document, hidden padding, a short document that only quotes a scam, and two checks that ordinary pages get no detector and do not wake the service worker.
+- `npm test` runs 20 unit tests on the heuristics.
+- `npm run test:e2e` runs 30 tests that load the unpacked extension into a real Chrome. They cover every sample above, plus: already open at install (with and without a prior click), confirmed fullscreen and keyboard lock before installation, service worker asleep, Back button after a block, extension reload, `file://` with and without file access, a `document.write()` rewrite, an SVG document, hidden padding, a short document that only quotes a scam, and two checks that ordinary pages get no detector and do not wake the service worker.
 
 The end-to-end tests need a Chrome binary. Set `CHROME_PATH` to an installed Chrome (it runs with a throwaway profile), or install Chrome for Testing with `npx @puppeteer/browsers install chrome@stable`.

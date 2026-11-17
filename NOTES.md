@@ -59,14 +59,14 @@ The detector first neutralises the page's key and right-click handlers, then the
 - **One kind of evidence is ordinary; two together are not.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. A security article quotes "your computer has been locked". None of those may be touched, and each is a test case. Requiring two kinds to agree is what separates them from the scam.
 - **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs trapping behaviour as well as words. A document that only quotes a scam, however closely, gets a banner the user can dismiss.
 - **Narrow definitions of "trap".** Only F5, F11 and F12 count as escape keys, because editors and terminals bind Ctrl+L, Ctrl+R and Escape for ordinary reasons. A vendor name counts as deception only when the page also traps the user.
-- **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: about 20 ms on a 20,000-row generated report, which is read through a bounded walk rather than in full.
+- **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: about 40 ms on a 20,000-row generated report, which is read through a bounded walk rather than in full.
 - **Layers instead of one clever trick.** Each trap-detection layer covers the previous one's blind spot: obfuscated scripts defeat the static read but not the probe; a page that ignores synthetic events defeats the probe but not the user's own key press.
 
 ## Known risks
 
 **False positives**
 - A blob document that *both* talks like a scam *and* traps the user, such as a phishing-awareness simulator or an editor (with an exit prompt and F-key handling) holding an article about scams, is blocked.
-- A document that quotes scare wording and prints a phone number gets the banner, not a redirect: a long security article (`samples/extra/edge-security-article.html`) or a short help-desk ticket.
+- A document that quotes scare wording and prints a phone number gets the banner, not a redirect: a long security article (`samples/extra/edge-security-article.html`), a short awareness leaflet (`samples/extra/edge-security-leaflet.html`) or a help-desk ticket.
 - A blob-hosted game or kiosk using fullscreen + keyboard lock + an exit prompt gets the banner.
 - A long hyphenated order number next to "contact support" is read as a phone number. On its own that never triggers anything.
 
@@ -74,8 +74,9 @@ The detector first neutralises the page's key and right-click handlers, then the
 - **Content inside an iframe of the blob document is not inspected.** Wrapping the same lock screen in a full-viewport iframe evades detection entirely. Left out on purpose: it needs multi-frame inspection (see "related techniques" below).
 - **The page is watched for 15 seconds after load.** A lock screen painted later is examined only when the user presses F5 / F11 / F12, right-clicks, or the page goes fullscreen.
 - Wording outside the English patterns, or wording I did not anticipate. Traps still earn the banner.
-- A lock screen drawn entirely as an image or canvas, or one with wording but no detectable trapping, gets the banner rather than a redirect (`malicious-image-only.html`).
+- A lock screen drawn entirely as an image or canvas gets the banner rather than a redirect (`malicious-image-only.html`).
 - A scam with no phone number and no trapping, for example "download this cleaner", is outside what this detects.
+- A text-only scam with a phone number gets a warning rather than automatic navigation. This preserves legitimate documents that quote scam wording, even when they are short and non-scrolling.
 - Scripts loaded from an external URL are not read; the probe and passive layers still apply.
 - In an SVG document a redirect works, but the banner cannot be drawn, so warn-level cases there show nothing.
 - A page that spams `alert()` in a tight loop keeps the renderer busy, so the detector cannot run. Chrome's own dialog throttling is the only mitigation there.
@@ -90,7 +91,7 @@ The detector first neutralises the page's key and right-click handlers, then the
 - the escape is driven from the service worker, which the page cannot reach, and uses tab discard when a prompt is possible;
 - the banner is shown in the browser's top layer and re-raised on fullscreen changes, so it stays visible.
 
-Late-painted content (`malicious-delayed.html`) and a page that rewrites itself with `document.write()` are covered by a 15-second mutation watch on the document node. A script tag that deletes itself after running is covered by remembering what was seen.
+Late-painted content (`malicious-delayed.html`), existing content revealed by changing `hidden`, `class` or `style` (`malicious-attribute-reveal.html`), and a page that rewrites itself with `document.write()` are covered by a 15-second mutation watch on the document node. A script tag that deletes itself after running is covered by remembering what was seen.
 
 ## Bonus: related techniques (not implemented)
 

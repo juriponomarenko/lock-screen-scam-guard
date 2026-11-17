@@ -153,6 +153,29 @@ test('verdict: words alone never navigate the tab, however scam-like', () => {
   assert.equal(H.score({ ...text, keysBlocked: true }).verdict, 'block');
 });
 
+test('verdict: text-only scam evidence warns even with every content signal', () => {
+  const r = H.score(signals(SCAM_TEXT, ''));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.trap, 0);
+  assert.equal(r.content, 8);
+});
+
+test('verdict: a short awareness leaflet quoting the scam is only warned', () => {
+  const leaflet = 'Recognize a tech-support scam. A fake warning may say: "Windows Security Alert. ' +
+    'Your computer has been locked. Call Microsoft Support at 1-800-555-0199." ' +
+    'This is a scam. Never call the number. Close the tab.';
+  const r = H.score(signals(leaflet, ''));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.total, 7);
+  assert.equal(r.trap, 0);
+});
+
+test('verdict: weak trapping plus quoted scam text does not trigger automatic navigation', () => {
+  const r = H.score(signals(SCAM_TEXT, "window.addEventListener('beforeunload', () => {});"));
+  assert.equal(r.verdict, 'warn');
+  assert.equal(r.trap, 2);
+});
+
 test('verdict: trapping alone warns, and only when it is heavy', () => {
   assert.equal(H.score({ keysBlocked: true, beforeunload: true }).verdict, 'allow');
   assert.equal(H.score({ keysBlocked: true, beforeunload: true, contextMenuBlocked: true }).verdict, 'warn');

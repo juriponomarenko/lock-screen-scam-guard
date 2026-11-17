@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!-- A short, non-scrolling awareness leaflet with suspicious text but no traps. -->
+<html lang="en">
+<head><meta charset="utf-8" /><title>Security leaflet</title></head>
+<body>
+  <button id="open">Read the leaflet</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8" /><title>How to spot a tech-support scam</title></head>
+      <body style="font: 16px/1.5 system-ui; margin: 40px; max-width: 600px;">
+        <h1>How to spot a tech-support scam</h1>
+        <p>A fake message says "Your computer has been locked".
+        Never call Microsoft Support at 1-800-555-0199. Close the page instead.</p>
+      </body>
+      </html>
+    `;
+    window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
+  });
+</script>
+</body>
+</html>

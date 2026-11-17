@@ -387,11 +387,19 @@
     evaluate();
     if (blocked) return;
 
-    // Content injected after load (a common way to dodge a one-shot scan).
-    // Watch the document node, not the root element: document.write() and
-    // root replacement swap the root element out.
+    // Content injected or revealed after load (a common way to dodge a
+    // one-shot scan). Watch the document node, not the root element:
+    // document.write() and root replacement swap the root element out.
+    // Attribute observation is limited to the ones that change visibility,
+    // so unrelated attribute churn does not trigger rescans.
     observer = new MutationObserver(scheduleEvaluation);
-    observer.observe(document, { childList: true, subtree: true, characterData: true });
+    observer.observe(document, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['hidden', 'class', 'style'],
+    });
     setTimeout(stopObserving, OBSERVE_MS);
 
     // Handlers registered late: look again once the page has settled.
