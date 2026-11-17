@@ -342,7 +342,8 @@
     text.className = 'text';
     const lead = document.createElement('strong');
     lead.textContent = 'This page shows signs of a fake "computer locked" scam. ';
-    text.append(lead, 'Your device is not locked. Do not call any number shown here.');
+    // Conditional wording: this tier also reaches legitimate documents.
+    text.append(lead, 'If it says your device is locked or infected, that is false. Do not call the number it gives.');
 
     const leave = document.createElement('button');
     leave.className = 'leave';

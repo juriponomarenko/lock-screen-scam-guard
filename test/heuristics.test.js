@@ -181,10 +181,20 @@ test('verdict: trapping alone warns, and only when it is heavy', () => {
   assert.equal(H.score({ keysBlocked: true, beforeunload: true, contextMenuBlocked: true }).verdict, 'warn');
 });
 
-test('verdict: vendor name plus trapping counts as deception', () => {
+test('verdict: vendor name plus trapping counts as deception, but only towards the banner', () => {
   const r = H.score({ impersonation: true, keysBlocked: true, beforeunload: true });
-  assert.equal(r.verdict, 'block');
+  assert.equal(r.verdict, 'warn');
   assert.equal(r.kinds, 2);
+});
+
+test('verdict: trapping plus ordinary content never navigates the tab', () => {
+  // No lock or infection claim anywhere: an editor holding a letter or an IT note.
+  const editor = { beforeunload: true, contextMenuBlocked: true };
+  assert.equal(H.score({ ...editor, phoneCta: true }).verdict, 'warn', 'letter with a phone number');
+  assert.equal(H.score({ ...editor, phoneCta: true, impersonation: true }).verdict, 'warn', 'note naming a vendor');
+  assert.equal(H.score({ keysBlocked: true, phoneCta: true, scriptedRedirect: true }).verdict, 'warn', 'F-key app');
+  // The same pages with the claim are the scam.
+  assert.equal(H.score({ ...editor, phoneCta: true, scare: true }).verdict, 'block');
 });
 
 test('verdict: reasons list exactly the signals that fired', () => {

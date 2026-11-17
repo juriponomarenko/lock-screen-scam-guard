@@ -12,7 +12,8 @@
  * One kind on its own is something legitimate pages do every day (an invoice
  * has a phone number, an editor has an "unsaved changes" prompt). The verdict
  * therefore needs two kinds to agree before anything is shown, and the tab is
- * only navigated away when one of them is trapping.
+ * only navigated away when the page both makes the lock / infection claim and
+ * traps the user.
  */
 (function (root) {
   'use strict';
@@ -180,15 +181,18 @@
 
     const trapped = trap >= THRESHOLDS.trapKind;
     // A vendor name alone is not deception (invoices and help pages name
-    // Microsoft too) unless the page is also trapping the user.
+    // Microsoft too) unless the page is also trapping the user. Even then it
+    // only counts towards the banner, never towards navigating away.
     const deceptive = Boolean(s.scare || (s.impersonation && trapped));
     const hooked = Boolean(s.phoneCta);
     const kinds = Number(deceptive) + Number(hooked) + Number(trapped);
 
     let verdict = 'allow';
-    if (total >= THRESHOLDS.block && kinds >= 2 && trapped) {
-      // Navigating away destroys the page, so it needs behaviour as well as
-      // words: a document that merely quotes a scam is never navigated.
+    if (total >= THRESHOLDS.block && s.scare && trapped) {
+      // Navigating away destroys the page, so it needs the lock / infection
+      // claim itself plus trapping. Words alone are not enough (a document can
+      // quote a scam), and neither is trapping plus ordinary content: an editor
+      // holding a letter has an exit prompt, its own menu and a phone number.
       verdict = 'block';
     } else if ((total >= THRESHOLDS.warn && kinds >= 2) || trap >= THRESHOLDS.heavyTrap) {
       verdict = 'warn';

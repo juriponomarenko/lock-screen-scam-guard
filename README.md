@@ -33,7 +33,7 @@ Later on:
 
 On the Details page Chrome lists the permission "Read your browsing history" and site access "On all sites". The reason is in [Decisions](#decisions).
 
-The manifest requires Chrome 133 or newer. The button names and positions above were checked against Chrome 157 on Windows, and the extension is verified on Chrome for Testing 146 and Chrome 157. Other Chromium browsers and other operating systems are untested.
+The manifest requires Chrome 133 or newer, because a Chromium announcement says `scripting.executeScript` reaches `blob:` documents by default from that version; versions 133 to 145 are untested. The button names and positions above were checked against Chrome 157 on Windows, and the extension is verified on Chrome for Testing 146 and Chrome 157. Other Chromium browsers and other operating systems are untested.
 
 ## Try it
 
@@ -53,14 +53,14 @@ Without Node, open `samples/malicious.html` and `samples/benign.html` directly i
 
 ## Decisions
 
-In short: inspect only `blob:` documents, score three kinds of evidence, and redirect only when a page both looks like the scam and traps the user. Anything weaker gets a dismissible banner.
+In short: inspect only `blob:` documents, score three kinds of evidence, and redirect only when a page both claims the device is locked or infected and traps the user. Weaker combinations get a dismissible banner.
 
 ### Design
 
 - **Look only at top-level `blob:` documents.** Showing content with no scannable URL is the scam's defining trick. Being a blob is the reason to look, never the verdict, because legitimate previews are blobs too.
-- **Inject on demand, not on every page.** The service worker injects the detector only into blob tabs, so ordinary pages get no script and do not wake the worker. Tests assert both.
+- **Inject on demand, not on every page.** The detector is a content script, but it is injected with `chrome.scripting` rather than declared under `content_scripts`. The service worker injects it only into blob tabs, so ordinary pages get no script and do not wake the worker. Tests assert both.
 - **Sweep open tabs once at start**, so a scam already open at install time is caught.
-- **Two responses, by the cost of being wrong.** A redirect destroys the page, so it needs proof of trapping. Weaker evidence gets a banner with a "Leave this page" button.
+- **Two responses, by the cost of being wrong.** A redirect destroys the page, so it needs both the lock claim and trapping. Weaker evidence gets a banner with a "Leave this page" button.
 - **Escape from the service worker.** A page cannot block the tabs API. Its one defence, the "Leave site?" prompt, is possible only after the user has clicked; then the tab is discarded first, which runs no page code.
 - **Broad permissions, narrow use.** A blob takes the origin of whichever site created it, so the extension needs access to all sites and to navigation events. The detector still only ever runs in blob tabs.
 - **Left out on purpose:** content inside iframes of the blob document, and content painted more than 15 seconds after load. Both need new mechanisms and are listed as false negatives in [NOTES.md](NOTES.md).
@@ -85,7 +85,7 @@ Evidence comes in three kinds, each scored:
 
 A page counts as "trapping" when its trap points add up to 3 or more.
 
-- **Block** (redirect): total of 6 or more, two kinds agree, and one of them is trapping.
+- **Block** (redirect): the page claims the device is locked, infected or at risk, it is trapping, and the total is 6 or more.
 - **Warn** (banner): total of 5 or more with two kinds, or trapping alone at 6 points or more.
 - **Allow**: anything else. `benign.html` scores 0; `malicious.html` scores 15.
 
@@ -93,7 +93,8 @@ The judgement calls behind those numbers:
 
 - **One kind alone never acts.** An invoice has a vendor name and a support number; an editor has an unsaved-changes prompt and its own right-click menu.
 - **Words alone never redirect.** A help-desk ticket that quotes a scam reads the same as the scam; only behaviour separates them.
-- **A vendor name is deception only when the page also traps the user.**
+- **Trapping plus ordinary content never redirects either.** An editor holding a letter has an exit prompt, its own menu and a phone number. Without the lock claim that is a banner at most.
+- **A vendor name is deception only when the page also traps the user**, and then only towards the banner.
 - **Only F5, F11 and F12 count as escape keys.** Editors and terminals legitimately bind Ctrl+L, Ctrl+R and Escape.
 - **Trapping is detected three ways**, least intrusive first: reading the page's scripts, checking whether the user's own F5 or right-click was cancelled, and firing synthetic F5/F11/F12. The synthetic keys go only to a page that already claims the device is locked.
 
@@ -138,7 +139,7 @@ npm test
 npm run test:e2e
 ```
 
-- `npm test` runs 20 unit tests on the heuristics.
-- `npm run test:e2e` runs 30 tests that load the unpacked extension into a real Chrome. They cover every sample above, plus: already open at install (with and without a prior click), confirmed fullscreen and keyboard lock before installation, service worker asleep, Back button after a block, extension reload, `file://` with and without file access, a `document.write()` rewrite, an SVG document, hidden padding, a short document that only quotes a scam, and two checks that ordinary pages get no detector and do not wake the service worker.
+- `npm test` runs 21 unit tests on the heuristics.
+- `npm run test:e2e` runs 31 tests that load the unpacked extension into a real Chrome. They cover every sample above, plus: already open at install (with and without a prior click), confirmed fullscreen and keyboard lock before installation, service worker asleep, Back button after a block, extension reload, `file://` with and without file access, a `document.write()` rewrite, an SVG document, hidden padding, a short document that only quotes a scam, an editor holding a letter with a phone number, and two checks that ordinary pages get no detector and do not wake the service worker.
 
 The end-to-end tests need a Chrome binary. Set `CHROME_PATH` to an installed Chrome (it runs with a throwaway profile), or install Chrome for Testing with `npx @puppeteer/browsers install chrome@stable`.

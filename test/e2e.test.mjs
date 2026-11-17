@@ -551,6 +551,26 @@ test('a short document that only quotes a scam gets the banner and is never navi
   assert.equal((await detectorState(page)).verdict, 'warn');
 });
 
+test('an editor holding a letter with a phone number is never navigated away', async () => {
+  // Trapping (exit prompt, own right-click menu) plus a hook (phone number) but
+  // no lock claim. A redirect here would destroy the user's unsaved draft.
+  const page = await openBlob(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Draft</title></head><body>' +
+      '<div id="doc" contenteditable="true"><p>Hi Sam, the plumber can come on Tuesday. ' +
+      'Please call me on 555-123-4567 to confirm.</p></div><script>' +
+      "window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = ''; });" +
+      "document.addEventListener('contextmenu', (e) => e.preventDefault());" +
+      '</' +
+      'script></body></html>'
+  );
+  await waitFor(() => page.url().startsWith('blob:'), 'the editor');
+  await sleep(2500);
+  assert.ok(page.url().startsWith('blob:'), 'trapping plus ordinary content never navigates the tab');
+  assert.equal(await blockedPage(), undefined);
+  assert.equal(await page.$eval('#doc', (doc) => doc.textContent.includes('plumber')), true, 'the draft is intact');
+  assert.equal((await detectorState(page)).verdict, 'warn', 'two kinds agree, so it gets the banner only');
+});
+
 test('reloading the extension leaves exactly one banner, and it still works', async () => {
   const page = await openSample('extra/malicious-image-only.html');
   await waitFor(() => hasBanner(page).catch(() => false), 'the warning banner');

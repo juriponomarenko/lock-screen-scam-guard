@@ -1,6 +1,6 @@
 # Detection note
 
-**In short.** The extension inspects only top-level `blob:` documents, because showing content without a scannable URL is the scam's defining trick. It scores three kinds of evidence: deceptive wording, a phone number to call, and trapping behaviour. It redirects the tab only when two kinds agree and one of them is trapping; weaker evidence gets a dismissible banner. That split exists because a legitimate preview, invoice or editor shares any one of those traits with the scam, and being wrong about a redirect destroys the user's page. The main risks are a legitimate blob page that both talks like a scam and traps the user (false positive), and a scam that hides its content in an iframe, paints it later than 15 seconds, or uses wording outside the English patterns (false negatives).
+**In short.** The extension inspects only top-level `blob:` documents, because showing content without a scannable URL is the scam's defining trick. It scores three kinds of evidence: deceptive wording, a phone number to call, and trapping behaviour. It redirects the tab only when the page both claims the device is locked or infected and traps the user; any other two kinds agreeing get a dismissible banner. That split exists because a legitimate preview, invoice or editor shares any one of those traits with the scam, and being wrong about a redirect destroys the user's page. The main risks are a legitimate blob page that both talks like a scam and traps the user (false positive), and a scam that hides its content in an iframe, paints it later than 15 seconds, or uses wording outside the English patterns (false negatives).
 
 ```mermaid
 flowchart TD
@@ -45,7 +45,7 @@ Trap evidence is gathered in three layers, least intrusive first:
 
 | Verdict | Rule | Action |
 |---|---|---|
-| Block | score of 6 or more **and** two kinds agree **and** one of them is trapping | navigate the tab to the extension's warning page |
+| Block | the page claims the device is locked or infected **and** it is trapping (trap score of 3 or more) **and** the total is 6 or more | navigate the tab to the extension's warning page |
 | Warn | score of 5 or more with two kinds, or heavy trapping alone (trap score of 6 or more) | dismissible banner with a "Leave this page" button |
 | Allow | anything else | nothing at all |
 
@@ -56,16 +56,19 @@ The detector first neutralises the page's key and right-click handlers, then the
 
 ## Why this approach
 
-- **One kind of evidence is ordinary; two together are not.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. A security article quotes "your computer has been locked". None of those may be touched, and each is a test case. Requiring two kinds to agree is what separates them from the scam.
-- **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs trapping behaviour as well as words. A document that only quotes a scam, however closely, gets a banner the user can dismiss.
-- **Narrow definitions of "trap".** Only F5, F11 and F12 count as escape keys, because editors and terminals bind Ctrl+L, Ctrl+R and Escape for ordinary reasons. A vendor name counts as deception only when the page also traps the user.
+- **One kind of evidence is ordinary.** An invoice has a vendor name and a support number. An editor has an unsaved-changes prompt and its own right-click menu. An antivirus report says a threat was detected. None of those may be touched, and each is a test case, so nothing is shown until two kinds agree.
+- **The cost of being wrong decides the response.** Navigating away from a legitimate page destroys the user's work, so that needs the lock claim itself as well as trapping. A document that only quotes a scam, however closely, gets a banner the user can dismiss. So does an editor holding a letter with a phone number: it traps like a scam and has a hook, but makes no claim.
+- **Narrow definitions of "trap".** Only F5, F11 and F12 count as escape keys, because editors and terminals bind Ctrl+L, Ctrl+R and Escape for ordinary reasons. A vendor name counts as deception only when the page also traps the user, and then only towards the banner.
 - **Performance by not running.** There is no content script on ordinary pages and the service worker is not woken by ordinary navigations (a test asserts both). On a blob document the work is one text read and a few regexes: about 40 ms on a 20,000-row generated report, which is read through a bounded walk rather than in full.
 - **Layers instead of one clever trick.** Each trap-detection layer covers the previous one's blind spot: obfuscated scripts defeat the static read but not the probe; a page that ignores synthetic events defeats the probe but not the user's own key press.
 
 ## Known risks
 
 **False positives**
-- A blob document that *both* talks like a scam *and* traps the user, such as a phishing-awareness simulator or an editor (with an exit prompt and F-key handling) holding an article about scams, is blocked.
+- A blob document that *both* makes the lock claim *and* traps the user is blocked: a phishing-awareness simulator, or an editor (with an exit prompt and its own right-click menu) holding an article that quotes a scam. This is the one case that costs the user their page.
+- Trapping plus ordinary content gets the banner: that same editor holding a letter with a phone number, or an app that handles F5 / F11 / F12 and prints a support line.
+- A genuine security notice ("we noticed unusual activity, call us on ...") uses the scam's wording and gets the banner.
+- The static script read is coarse: a key listener, the text `'F11'` and a `preventDefault()` anywhere in the page's scripts count as cancelling escape keys.
 - A document that quotes scare wording and prints a phone number gets the banner, not a redirect: a long security article (`samples/extra/edge-security-article.html`), a short awareness leaflet (`samples/extra/edge-security-leaflet.html`) or a help-desk ticket.
 - A blob-hosted game or kiosk using fullscreen + keyboard lock + an exit prompt gets the banner.
 - A long hyphenated order number next to "contact support" is read as a phone number. On its own that never triggers anything.
@@ -73,8 +76,9 @@ The detector first neutralises the page's key and right-click handlers, then the
 **False negatives**
 - **Content inside an iframe of the blob document is not inspected.** Wrapping the same lock screen in a full-viewport iframe evades detection entirely. Left out on purpose: it needs multi-frame inspection (see "related techniques" below).
 - **The page is watched for 15 seconds after load.** A lock screen painted later is examined only when the user presses F5 / F11 / F12, right-clicks, or the page goes fullscreen.
-- Wording outside the English patterns, or wording I did not anticipate. Traps still earn the banner.
-- A lock screen drawn entirely as an image or canvas gets the banner rather than a redirect (`malicious-image-only.html`).
+- Wording outside the English patterns, or wording I did not anticipate. Without a recognised lock or infection claim there is no redirect, however much the page traps; a phone number plus trapping, or heavy trapping alone, still earns the banner.
+- A lock screen whose text cannot be read (drawn as an image or canvas, or placed in a shadow root) gets the banner at most (`malicious-image-only.html`).
+- The banner lives in the page's own DOM, so a page written against this extension could remove or cover it. Only the redirect is out of the page's reach.
 - A scam with no phone number and no trapping, for example "download this cleaner", is outside what this detects.
 - A text-only scam with a phone number gets a warning rather than automatic navigation. This preserves legitimate documents that quote scam wording, even when they are short and non-scrolling.
 - Scripts loaded from an external URL are not read; the probe and passive layers still apply.
